@@ -430,16 +430,20 @@ async function saveThreshold(ticker, value) {
 // ════════════════════════════════════════════
 async function fetchPrices() {
   setDot('scanning');
+
+  // 1. GET cache imediato para mostrar cards
   try {
-    // 1. Primeiro faz GET para mostrar dados do cache imediatamente
     const resGet = await fetch(`${API_BASE}/api/prices`);
     if (resGet.ok) {
-      const dataGet = await resGet.json();
-      Object.assign(state.prices, dataGet.prices || {});
-      if (dataGet.fx) { state.fx = dataGet.fx; document.getElementById('fxIn').value = state.fx; }
+      const d = await resGet.json();
+      Object.assign(state.prices, d.prices || {});
+      if (d.fx) { state.fx = d.fx; document.getElementById('fxIn').value = state.fx; }
       renderCards();
     }
-    // 2. Depois faz POST para buscar preços frescos
+  } catch(e) { console.warn('GET falhou:', e); }
+
+  // 2. POST para buscar preços frescos
+  try {
     const res = await fetch(`${API_BASE}/api/prices`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -447,13 +451,17 @@ async function fetchPrices() {
     });
     if (res.ok) {
       const data = await res.json();
+      console.log('POST ok, preços:', Object.keys(data.prices||{}).length, data.sources);
       Object.assign(state.prices, data.prices || {});
       if (data.fx) { state.fx = data.fx; document.getElementById('fxIn').value = state.fx; }
       state.dbOk = true;
     } else {
+      const err = await res.text();
+      console.error('POST erro:', res.status, err);
       await fetchPricesDirect();
     }
-  } catch {
+  } catch(e) {
+    console.error('POST exception:', e);
     await fetchPricesDirect();
   }
 
