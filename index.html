@@ -171,29 +171,56 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
 
 /* ── DASHBOARD ── */
 .dash-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-.dash-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+.dash-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:13px 14px;position:relative;overflow:hidden}
+.dash-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--border2)}
 .dash-card.full{grid-column:1/-1}
-.dash-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);margin-bottom:4px;font-weight:600}
-.dash-value{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:var(--text)}
+.dash-card.full::before{background:linear-gradient(90deg,var(--green),var(--accent))}
+.dash-card.card-neg::before{background:var(--red)!important}
+.dash-label{font-size:8px;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-weight:600}
+.dash-value{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:900;color:var(--text);line-height:1}
 .dash-value.pos{color:var(--green)}
 .dash-value.neg{color:var(--red)}
-.dash-sub{font-size:10px;color:var(--text);margin-top:2px}
-.cat-block{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow:hidden}
-.cat-head{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--border)}
-.cat-title{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px}
-.cat-pct{font-size:12px;font-weight:600}
-.asset-row{display:flex;align-items:center;justify-content:space-between;padding:8px 13px;border-bottom:1px solid var(--border)}
+.dash-sub{font-size:10px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:4px}
+.dash-badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700}
+.dash-badge.pos{background:rgba(34,211,160,0.15);color:var(--green)}
+.dash-badge.neg{background:rgba(255,92,92,0.15);color:var(--red)}
+
+/* categoria */
+.cat-block{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden}
+.cat-head{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;background:var(--s2);border-bottom:1px solid var(--border)}
+.cat-title{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+.cat-meta{display:flex;align-items:center;gap:8px}
+.cat-total{font-size:11px;color:var(--muted)}
+.cat-pct{font-size:12px;font-weight:700;padding:1px 8px;border-radius:20px}
+.cat-pct.pos{background:rgba(34,211,160,0.12);color:var(--green)}
+.cat-pct.neg{background:rgba(255,92,92,0.12);color:var(--red)}
+
+/* asset rows */
+.asset-row{padding:10px 13px;border-bottom:1px solid var(--border);transition:background 0.15s}
 .asset-row:last-child{border-bottom:none}
-.ar-left{display:flex;align-items:center;gap:8px}
-.ar-tag{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:900;background:var(--s2);border:1px solid var(--border2);border-radius:5px;padding:2px 7px;min-width:52px;text-align:center}
-.ar-info{font-size:10px;color:var(--text)}
-.ar-qtd{font-size:11px;color:var(--text);margin-top:1px}
+.asset-row:hover{background:rgba(255,255,255,0.02)}
+.ar-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.ar-left{display:flex;align-items:center;gap:9px}
+.ar-tag{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:900;background:var(--s2);border:1px solid var(--border2);border-radius:5px;padding:3px 8px;min-width:58px;text-align:center;letter-spacing:0.5px}
+.ar-name{font-size:10px;color:var(--muted);margin-top:1px}
 .ar-right{text-align:right}
-.ar-atual{font-size:13px;font-weight:600;color:var(--text)}
-.ar-lp{font-size:11px;font-weight:600;margin-top:1px}
+.ar-atual{font-size:13px;font-weight:700;color:var(--text)}
+.ar-lp{font-size:11px;font-weight:700;margin-top:2px}
 .ar-lp.pos{color:var(--green)}
 .ar-lp.neg{color:var(--red)}
-.ar-lp.neu{color:var(--text)}
+.ar-lp.neu{color:var(--muted)}
+
+/* values row */
+.ar-vals{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:6px}
+.ar-val-item{display:flex;flex-direction:column;gap:1px}
+.ar-val-label{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);opacity:0.7}
+.ar-val-num{font-size:11px;color:var(--text);font-weight:500}
+
+/* mini progress bar */
+.ar-bar{height:3px;background:var(--s2);border-radius:2px;position:relative;overflow:hidden}
+.ar-bar-fill{height:100%;border-radius:2px;transition:width 0.7s ease}
+.ar-bar-fill.pos{background:linear-gradient(90deg,rgba(34,211,160,0.4),var(--green))}
+.ar-bar-fill.neg{background:linear-gradient(90deg,rgba(255,92,92,0.4),var(--red))}
 /* views */
 .view{display:none}.view.active{display:block}
 </style>
@@ -864,96 +891,135 @@ function playAlert() {
 // ════════════════════════════════════════════
 //  DASHBOARD
 // ════════════════════════════════════════════
+function fmt(val) { return val.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
 function renderDashboard() {
   const fx = state.fx;
   const cats = [
-    { key:'br',     label:'🇧🇷 Ações BR',      assets: ASSETS.filter(a=>a.type==='br'||a.type==='fii') },
-    { key:'intl',   label:'🌍 Internacional',   assets: ASSETS.filter(a=>a.type==='intl') },
-    { key:'crypto', label:'₿ Cripto',           assets: ASSETS.filter(a=>a.type==='crypto') },
+    { key:'br',     label:'🇧🇷 Ações BR',    assets: ASSETS.filter(a=>a.type==='br'||a.type==='fii') },
+    { key:'intl',   label:'🌍 Internacional', assets: ASSETS.filter(a=>a.type==='intl') },
+    { key:'crypto', label:'₿ Cripto',         assets: ASSETS.filter(a=>a.type==='crypto') },
   ];
 
   let totalInvest = 0, totalAtual = 0;
-
-  // Calcular totais
   cats.forEach(cat => {
     cat.assets.forEach(a => {
       const price = state.prices[a.id];
       const isBRL = a.type==='br' || a.type==='fii';
       const investBRL = a.compra * a.qtd * (isBRL ? 1 : fx);
-      const atualBRL = price != null ? price * a.qtd * (isBRL ? 1 : fx) : investBRL;
+      const atualBRL  = price != null ? price * a.qtd * (isBRL ? 1 : fx) : investBRL;
       totalInvest += investBRL;
-      totalAtual += atualBRL;
+      totalAtual  += atualBRL;
     });
   });
 
-  const totalLP = totalAtual - totalInvest;
+  const totalLP  = totalAtual - totalInvest;
   const totalPct = totalInvest > 0 ? (totalLP / totalInvest) * 100 : 0;
-  const lpCls = totalLP >= 0 ? 'pos' : 'neg';
-  const lpSign = totalLP >= 0 ? '+' : '';
+  const lpCls    = totalLP >= 0 ? 'pos' : 'neg';
+  const lpSign   = totalLP >= 0 ? '+' : '';
+  const barPct   = Math.min(100, Math.max(0, totalInvest > 0 ? (totalAtual / totalInvest) * 50 : 50));
 
   let html = `
   <div class="dash-summary">
     <div class="dash-card">
       <div class="dash-label">Total Investido</div>
-      <div class="dash-value">R$ ${totalInvest.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="dash-value" style="font-size:19px">R$ ${fmt(totalInvest)}</div>
+      <div class="dash-sub">${ASSETS.filter(a=>a.qtd>0).length} ativos</div>
     </div>
     <div class="dash-card">
       <div class="dash-label">Valor Atual</div>
-      <div class="dash-value">R$ ${totalAtual.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="dash-value ${lpCls}" style="font-size:19px">R$ ${fmt(totalAtual)}</div>
+      <div class="dash-sub">câmbio R$ ${fx.toFixed(3)}</div>
     </div>
-    <div class="dash-card full">
-      <div class="dash-label">Lucro / Prejuízo Total</div>
-      <div class="dash-value ${lpCls}">${lpSign}R$ ${Math.abs(totalLP).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div class="dash-sub" style="color:${totalLP>=0?'var(--green)':'var(--red)'}">${lpSign}${totalPct.toFixed(2)}% sobre o investido</div>
+    <div class="dash-card full ${totalLP < 0 ? 'card-neg' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="dash-label">Lucro / Prejuízo Total</div>
+          <div class="dash-value ${lpCls}">${lpSign}R$ ${fmt(Math.abs(totalLP))}</div>
+        </div>
+        <span class="dash-badge ${lpCls}" style="font-size:16px;padding:4px 14px">${lpSign}${totalPct.toFixed(2)}%</span>
+      </div>
+      <div style="margin-top:10px;height:4px;background:var(--s2);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${barPct}%;background:${totalLP>=0?'var(--green)':'var(--red)'};border-radius:2px;transition:width 0.8s ease"></div>
+      </div>
+      <div class="dash-sub" style="margin-top:5px">${totalLP>=0?'▲ acima':'▼ abaixo'} do preço médio</div>
     </div>
   </div>`;
 
   cats.forEach(cat => {
     let catInvest = 0, catAtual = 0;
+
     const rows = cat.assets.map(a => {
-      const price = state.prices[a.id];
-      const isBRL = a.type==='br' || a.type==='fii';
-      const isCrypto = a.type==='crypto';
-      const isIntl = a.type==='intl';
+      const price   = state.prices[a.id];
+      const isBRL   = a.type==='br' || a.type==='fii';
       const investBRL = a.compra * a.qtd * (isBRL ? 1 : fx);
-      const atualBRL = price != null ? price * a.qtd * (isBRL ? 1 : fx) : null;
+      const atualBRL  = price != null ? price * a.qtd * (isBRL ? 1 : fx) : null;
+
       catInvest += investBRL;
-      if (atualBRL != null) catAtual += atualBRL;
-      else catAtual += investBRL;
+      catAtual  += atualBRL != null ? atualBRL : investBRL;
 
-      const lp = atualBRL != null ? atualBRL - investBRL : null;
+      const lp    = atualBRL != null ? atualBRL - investBRL : null;
       const lpPct = lp != null && investBRL > 0 ? (lp / investBRL) * 100 : null;
-      const lpCls = lp == null ? 'neu' : lp >= 0 ? 'pos' : 'neg';
-      const lpSign = lp != null && lp >= 0 ? '+' : '';
+      const cls   = lp == null ? 'neu' : lp >= 0 ? 'pos' : 'neg';
+      const sign  = lp != null && lp >= 0 ? '+' : '';
 
-      const pmStr = isBRL ? `PM R$ ${a.compra.toFixed(2)}` : `PM US$ ${a.compra.toFixed(2)}`;
-      const atualStr = price == null ? '—' : isBRL ? `R$ ${(price*a.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}` : `R$ ${(atualBRL).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      const lpStr = lp == null ? '—' : `${lpSign}R$ ${Math.abs(lp).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} (${lpSign}${lpPct.toFixed(1)}%)`;
+      const pmLabel = isBRL ? `R$ ${a.compra.toFixed(2)}` : `US$ ${a.compra.toFixed(2)}`;
+      const atualDisp = atualBRL == null
+        ? '<span style="color:var(--muted);font-size:11px">buscando…</span>'
+        : `R$ ${fmt(atualBRL)}`;
+      const lpDisp = lp == null ? '—'
+        : `${sign}R$ ${fmt(Math.abs(lp))}`;
+      const pctDisp = lpPct == null ? '' : `${sign}${lpPct.toFixed(2)}%`;
+
+      // barra de progresso por ativo (quanto do atual em relação ao investido)
+      const barW = atualBRL == null ? 50 : Math.min(200, Math.max(0, (atualBRL / investBRL) * 50));
 
       return `<div class="asset-row">
-        <div class="ar-left">
-          <div class="ar-tag">${a.id}</div>
-          <div>
-            <div class="ar-info">${pmStr} · ${a.qtd} un</div>
-            <div class="ar-qtd">Invest: R$ ${investBRL.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div class="ar-top">
+          <div class="ar-left">
+            <div class="ar-tag">${a.id}</div>
+            <div>
+              <div style="font-size:10px;color:var(--text);font-weight:500">${a.qtd} × PM ${pmLabel}</div>
+              <div class="ar-name">${a.name}</div>
+            </div>
+          </div>
+          <div class="ar-right">
+            <div class="ar-atual">${atualDisp}</div>
+            ${lp != null ? `<div class="ar-lp ${cls}">${lpDisp} <span style="opacity:0.75">(${pctDisp})</span></div>` : '<div class="ar-lp neu">—</div>'}
           </div>
         </div>
-        <div class="ar-right">
-          <div class="ar-atual">${atualStr}</div>
-          <div class="ar-lp ${lpCls}">${lpStr}</div>
+        <div class="ar-vals">
+          <div class="ar-val-item">
+            <span class="ar-val-label">Investido</span>
+            <span class="ar-val-num">R$ ${fmt(investBRL)}</span>
+          </div>
+          <div class="ar-val-item" style="text-align:center">
+            <span class="ar-val-label">Valor Atual</span>
+            <span class="ar-val-num" style="color:${lp==null?'var(--text)':lp>=0?'var(--green)':'var(--red)'}">${atualBRL != null ? 'R$ '+fmt(atualBRL) : '—'}</span>
+          </div>
+          <div class="ar-val-item" style="text-align:right">
+            <span class="ar-val-label">L/P</span>
+            <span class="ar-val-num" style="color:${lp==null?'var(--muted)':lp>=0?'var(--green)':'var(--red)'}">${lpDisp}</span>
+          </div>
+        </div>
+        <div class="ar-bar">
+          <div class="ar-bar-fill ${cls}" style="width:${barW}%"></div>
         </div>
       </div>`;
     }).join('');
 
-    const catLP = catAtual - catInvest;
+    const catLP  = catAtual - catInvest;
     const catPct = catInvest > 0 ? (catLP / catInvest) * 100 : 0;
     const catSign = catLP >= 0 ? '+' : '';
-    const catColor = catLP >= 0 ? 'var(--green)' : 'var(--red)';
+    const catCls  = catLP >= 0 ? 'pos' : 'neg';
 
     html += `<div class="cat-block">
       <div class="cat-head">
         <div class="cat-title">${cat.label}</div>
-        <div class="cat-pct" style="color:${catColor}">${catSign}${catPct.toFixed(1)}%</div>
+        <div class="cat-meta">
+          <span class="cat-total">R$ ${fmt(catAtual)}</span>
+          <span class="cat-pct ${catCls}">${catSign}${catPct.toFixed(1)}%</span>
+        </div>
       </div>
       ${rows}
     </div>`;
