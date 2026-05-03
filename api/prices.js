@@ -1,7 +1,4 @@
-// api/prices.js
-// Vercel Serverless Function
-// GET  /api/prices        → retorna preços atuais + thresholds do Supabase
-// POST /api/prices        → força novo scan e salva no histórico
+// api/prices.js — APIs GRATUITAS: Brapi (B3), CoinGecko (Cripto), Yahoo Finance (Intl)
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -10,15 +7,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
-// Carteira fixa (mesma do front)
 const ASSETS = [
   { id:'VALE3',  name:'Vale S.A.',       type:'br',     compra:87.68 },
   { id:'PETR4',  name:'Petrobras PN',    type:'br',     compra:49.68 },
   { id:'BBAS3',  name:'Banco do Brasil', type:'br',     compra:24.60 },
   { id:'ABEV3',  name:'Ambev',           type:'br',     compra:15.86 },
-  { id:'CPTS11', name:'Capitânia Sec.', type:'fii',    compra:8.12  },
+  { id:'CPTS11', name:'Capitânia Sec.',  type:'fii',    compra:8.12  },
   { id:'AZZA3',  name:'Azzas 2154',      type:'br',     compra:21.28 },
   { id:'CURY3',  name:'Cury',            type:'br',     compra:27.40 },
   { id:'BMOB3',  name:'Biomob',          type:'br',     compra:34.60 },
@@ -35,182 +29,153 @@ const ASSETS = [
   { id:'BNB',    name:'Binance Coin',    type:'crypto', compra:617.0 },
 ];
 
-async function callClaude(prompt) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      system: 'Assistente financeiro. Responda APENAS com JSON válido, sem texto extra.',
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
+async function fetchBR() {
+  const tickers = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
+  const res = await fetch(`https://brapi.dev/api/quote/${tickers}?token=guest`);
   const data = await res.json();
-  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-  try { return JSON.parse(text.replace(/```json|```/g, '').trim()); }
-  catch { return null; }
+  const prices = {};
+  (data.results||[]).forEach(item => {
+    if (item.regularMarketPrice) prices[item.symbol] = item.regularMarketPrice;
+  });
+  return prices;
 }
 
-async function fetchAllPrices() {
-  const brTickers  = ASSETS.filter(a => a.type==='br'||a.type==='fii').map(a=>a.id).join(', ');
-  const intlTickers = ASSETS.filter(a => a.type==='intl').map(a=>a.id).join(', ');
-  const cryptoTickers = ASSETS.filter(a => a.type==='crypto').map(a=>a.id).join(', ');
+async function fetchIntl() {
+  const tickers = ['O','TSM','BABA','TCEHY','PDD','SONY'].join('%2C');
+  const res = await fetch(
+    `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${tickers}&fields=regularMarketPrice`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' } }
+  );
+  const data = await res.json();
+  const prices = {};
+  (data?.quoteResponse?.result||[]).forEach(q => {
+    if (q.regularMarketPrice) prices[q.symbol] = q.regularMarketPrice;
+  });
+  return prices;
+}
 
-  const [brPrices, intlPrices, cryptoPrices, fxData] = await Promise.all([
-    callClaude(`Cotação atual B3 das ações: ${brTickers}. Retorne APENAS JSON: {"VALE3":81.47,...}`),
-    callClaude(`Preço atual USD: ${intlTickers}. Retorne APENAS JSON: {"O":63.82,...}`),
-    callClaude(`Preço atual USD cripto: ${cryptoTickers}. Retorne APENAS JSON: {"RNDR":1.68,"USDT":1.00,"BNB":617.0}`),
-    callClaude(`Cotação USD/BRL agora. Retorne APENAS JSON: {"usd_brl":4.975}`)
-  ]);
+async function fetchCrypto() {
+  const coinMap = { 'render-token':'RNDR', 'tether':'USDT', 'binancecoin':'BNB' };
+  const res = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${Object.keys(coinMap).join(',')}&vs_currencies=usd`
+  );
+  const data = await res.json();
+  const prices = {};
+  Object.entries(coinMap).forEach(([id, ticker]) => {
+    if (data[id]?.usd) prices[ticker] = data[id].usd;
+  });
+  return prices;
+}
 
-  return {
-    prices: { ...brPrices, ...intlPrices, ...cryptoPrices },
-    fx: fxData?.usd_brl || 4.975,
-    timestamp: new Date().toISOString()
-  };
+async function fetchFX() {
+  try {
+    const res = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL');
+    const data = await res.json();
+    return parseFloat(data.USDBRL?.bid || '4.975');
+  } catch { return 4.975; }
 }
 
 module.exports = async (req, res) => {
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    // GET: retorna dados mais recentes do banco
     if (req.method === 'GET') {
-      // Último preço de cada ticker
       const { data: latestPrices } = await supabase
-        .from('price_history')
-        .select('ticker, price, currency, asset_type, captured_at')
-        .order('captured_at', { ascending: false });
+        .from('price_history').select('ticker,price,currency,asset_type,captured_at')
+        .order('captured_at', { ascending: false }).limit(200);
 
-      // Deduplica — pega só o mais recente de cada ticker
-      const seen = new Set();
-      const prices = {};
-      (latestPrices || []).forEach(row => {
-        if (!seen.has(row.ticker)) {
-          seen.add(row.ticker);
-          prices[row.ticker] = row.price;
-        }
+      const seen = new Set(), prices = {};
+      (latestPrices||[]).forEach(row => {
+        if (!seen.has(row.ticker)) { seen.add(row.ticker); prices[row.ticker] = row.price; }
       });
 
-      // Thresholds
-      const { data: thresholds } = await supabase
-        .from('thresholds')
-        .select('ticker, threshold, ativo');
-
-      // FX
-      const { data: fxConfig } = await supabase
-        .from('app_config')
-        .select('value')
-        .eq('key', 'fx_usd_brl')
-        .single();
-
-      // Últimos alertas
-      const { data: recentAlerts } = await supabase
-        .from('alert_log')
-        .select('*')
-        .order('triggered_at', { ascending: false })
-        .limit(20);
+      const { data: thresholds } = await supabase.from('thresholds').select('ticker,threshold,ativo');
+      const { data: fxConfig }   = await supabase.from('app_config').select('value').eq('key','fx_usd_brl').single();
+      const { data: recentAlerts } = await supabase.from('alert_log').select('*')
+        .order('triggered_at',{ascending:false}).limit(20);
 
       return res.json({
         prices,
-        thresholds: Object.fromEntries((thresholds||[]).map(t => [t.ticker, { value: t.threshold, ativo: t.ativo }])),
-        fx: parseFloat(fxConfig?.value || '4.975'),
-        recentAlerts: recentAlerts || [],
+        thresholds: Object.fromEntries((thresholds||[]).map(t=>[t.ticker,{value:t.threshold,ativo:t.ativo}])),
+        fx: parseFloat(fxConfig?.value||'4.975'),
+        recentAlerts: recentAlerts||[],
         cached: true
       });
     }
 
-    // POST: força novo scan
     if (req.method === 'POST') {
-      const { action, ticker, threshold } = req.body || {};
+      const body = req.body||{};
 
-      // Atualizar threshold de um ativo
-      if (action === 'set_threshold' && ticker) {
-        await supabase
-          .from('thresholds')
-          .upsert({ ticker, threshold: parseFloat(threshold), updated_at: new Date().toISOString() }, { onConflict: 'ticker' });
-        return res.json({ ok: true });
+      if (body.action==='set_threshold' && body.ticker) {
+        await supabase.from('thresholds').upsert(
+          { ticker:body.ticker, threshold:parseFloat(body.threshold), updated_at:new Date().toISOString() },
+          { onConflict:'ticker' }
+        );
+        return res.json({ ok:true });
       }
 
-      // Scan completo
-      const { prices, fx, timestamp } = await fetchAllPrices();
+      const [brPrices, intlPrices, cryptoPrices, fx] = await Promise.all([
+        fetchBR().catch(()=>({})),
+        fetchIntl().catch(()=>({})),
+        fetchCrypto().catch(()=>({})),
+        fetchFX().catch(()=>4.975),
+      ]);
 
-      // Salva histórico de preços
-      const historyRows = ASSETS
-        .filter(a => prices[a.id] != null)
-        .map(a => ({
-          ticker: a.id,
-          price: prices[a.id],
-          currency: (a.type === 'br' || a.type === 'fii') ? 'BRL' : 'USD',
-          asset_type: a.type,
-          captured_at: timestamp
-        }));
+      const allPrices = { ...brPrices, ...intlPrices, ...cryptoPrices };
+      const timestamp = new Date().toISOString();
 
-      if (historyRows.length) {
-        await supabase.from('price_history').insert(historyRows);
-      }
+      const historyRows = ASSETS.filter(a=>allPrices[a.id]!=null).map(a=>({
+        ticker: a.id,
+        price: allPrices[a.id],
+        currency: (a.type==='br'||a.type==='fii') ? 'BRL' : 'USD',
+        asset_type: a.type,
+        captured_at: timestamp
+      }));
 
-      // Atualiza FX
-      await supabase
-        .from('app_config')
-        .upsert({ key: 'fx_usd_brl', value: String(fx), updated_at: timestamp });
+      if (historyRows.length) await supabase.from('price_history').insert(historyRows);
 
-      // Atualiza last_scan
-      await supabase
-        .from('app_config')
-        .upsert({ key: 'last_scan', value: timestamp });
+      await supabase.from('app_config').upsert([
+        { key:'fx_usd_brl', value:String(fx),  updated_at:timestamp },
+        { key:'last_scan',  value:timestamp,    updated_at:timestamp }
+      ]);
 
-      // Verifica e loga alertas
-      const { data: thresholds } = await supabase
-        .from('thresholds')
-        .select('ticker, threshold')
-        .eq('ativo', true);
+      const { data: thresholds } = await supabase.from('thresholds')
+        .select('ticker,threshold').eq('ativo',true);
 
       const alerts = [];
-      (thresholds || []).forEach(t => {
-        const price = prices[t.ticker];
-        const asset = ASSETS.find(a => a.id === t.ticker);
-        if (!price || !asset) return;
+      (thresholds||[]).forEach(t => {
+        const price = allPrices[t.ticker];
+        const asset = ASSETS.find(a=>a.id===t.ticker);
+        if (!price||!asset) return;
         const changePct = ((price - asset.compra) / asset.compra) * 100;
         if (changePct <= -t.threshold) {
           alerts.push({
-            ticker: t.ticker,
-            asset_name: asset.name,
-            price_at_alert: price,
-            compra_price: asset.compra,
-            change_pct: changePct,
-            threshold_pct: t.threshold,
+            ticker: t.ticker, asset_name: asset.name,
+            price_at_alert: price, compra_price: asset.compra,
+            change_pct: changePct, threshold_pct: t.threshold,
             currency: (asset.type==='br'||asset.type==='fii') ? 'BRL' : 'USD',
             fx_rate: fx
           });
         }
       });
 
-      if (alerts.length) {
-        await supabase.from('alert_log').insert(alerts);
-      }
+      if (alerts.length) await supabase.from('alert_log').insert(alerts);
 
       return res.json({
-        prices,
-        fx,
-        alerts,
-        timestamp,
-        rows_saved: historyRows.length
+        prices: allPrices, fx, alerts, timestamp,
+        rows_saved: historyRows.length,
+        sources: {
+          br: `${Object.keys(brPrices).length} ativos via Brapi`,
+          intl: `${Object.keys(intlPrices).length} ativos via Yahoo Finance`,
+          crypto: `${Object.keys(cryptoPrices).length} ativos via CoinGecko`,
+          fx: `USD/BRL = ${fx} via AwesomeAPI`
+        }
       });
     }
 
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error:'Method not allowed' });
 
-  } catch (err) {
+  } catch(err) {
     console.error('API error:', err);
     return res.status(500).json({ error: err.message });
   }
