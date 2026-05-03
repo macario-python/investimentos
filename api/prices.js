@@ -31,7 +31,7 @@ const ASSETS = [
 
 async function fetchBR() {
   const tickers = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
-  const res = await fetch(`https://brapi.dev/api/quote/${tickers}?token=guest`);
+  const res = await fetch(`https://brapi.dev/api/quote/${tickers}?token=${process.env.BRAPI_TOKEN||'guest'}`);
   const data = await res.json();
   const prices = {};
   (data.results||[]).forEach(item => {
