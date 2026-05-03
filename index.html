@@ -168,6 +168,32 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
 .toast.ok{border-color:rgba(34,211,160,0.4);color:var(--green)}
 .toast.fire{border-color:rgba(245,200,66,0.5);color:var(--accent)}
 
+
+/* ── DASHBOARD ── */
+.dash-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.dash-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+.dash-card.full{grid-column:1/-1}
+.dash-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text);margin-bottom:4px;font-weight:600}
+.dash-value{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:var(--text)}
+.dash-value.pos{color:var(--green)}
+.dash-value.neg{color:var(--red)}
+.dash-sub{font-size:10px;color:var(--text);margin-top:2px}
+.cat-block{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow:hidden}
+.cat-head{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--border)}
+.cat-title{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:1px}
+.cat-pct{font-size:12px;font-weight:600}
+.asset-row{display:flex;align-items:center;justify-content:space-between;padding:8px 13px;border-bottom:1px solid var(--border)}
+.asset-row:last-child{border-bottom:none}
+.ar-left{display:flex;align-items:center;gap:8px}
+.ar-tag{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:900;background:var(--s2);border:1px solid var(--border2);border-radius:5px;padding:2px 7px;min-width:52px;text-align:center}
+.ar-info{font-size:10px;color:var(--text)}
+.ar-qtd{font-size:11px;color:var(--text);margin-top:1px}
+.ar-right{text-align:right}
+.ar-atual{font-size:13px;font-weight:600;color:var(--text)}
+.ar-lp{font-size:11px;font-weight:600;margin-top:1px}
+.ar-lp.pos{color:var(--green)}
+.ar-lp.neg{color:var(--red)}
+.ar-lp.neu{color:var(--text)}
 /* views */
 .view{display:none}.view.active{display:block}
 </style>
@@ -229,12 +255,19 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
     <div id="histList"><div style="text-align:center;padding:40px;color:var(--muted);font-size:12px">Carregando histórico...</div></div>
   </div>
 
+  <div class="view" id="viewDashboard">
+    <div id="dashContent"><div style="text-align:center;padding:40px;color:var(--text);font-size:12px">Carregando carteira...</div></div>
+  </div>
+
 </div><!-- .app -->
 
 <!-- ── BOTTOM NAV ── -->
 <nav class="bnav">
   <button class="nitem active" id="nav_monitor" onclick="switchView('monitor')">
     <span>📊</span><span>Monitor</span>
+  </button>
+  <button class="nitem" id="nav_dashboard" onclick="switchView('dashboard')">
+    <span>💼</span><span>Carteira</span>
   </button>
   <button class="nitem" onclick="forceRefresh()">
     <span>🔄</span><span>Atualizar</span>
@@ -436,7 +469,7 @@ async function fetchPrices() {
       const d = await resGet.json();
       Object.assign(state.prices, d.prices || {});
       if (d.fx) { state.fx = d.fx; document.getElementById('fxIn').value = state.fx; }
-      renderCards();
+      renderCards(); renderDashboard();
     }
   } catch(e) {}
   try {
@@ -450,12 +483,10 @@ async function fetchPrices() {
       Object.assign(state.prices, data.prices || {});
       if (data.fx) { state.fx = data.fx; document.getElementById('fxIn').value = state.fx; }
       state.dbOk = true;
-    } else {
-      await fetchPricesDirect();
-    }
+    } else { await fetchPricesDirect(); }
   } catch(e) { await fetchPricesDirect(); }
   state.triggered = {};
-  renderCards();
+  renderCards(); renderDashboard();
   checkAlerts();
   setDot('on');
   updateLastScan();
@@ -567,7 +598,7 @@ function buildCard(a) {
   </div>
   ${oppBanner}
   <div class="card-bar">
-    <div class="bar-row"><span>Alvo -${thr}%</span><span style="color:${change==null?'var(--text)':change>=0?'var(--green)":'var(--red)'}">${chgTxt}</span></div>
+    <div class="bar-row"><span>Alvo -${thr}%</span><span style="color:${change==null?'var(--text)':change>=0?'var(--green)':'var(--red)'}">${chgTxt}</span></div>
     <div class="bar-track">
       <div class="bar-fill" style="width:${barW}%;background:${barColor}"></div>
       <div class="bar-target" style="left:${targetL}%"></div>
@@ -801,6 +832,7 @@ function switchView(v) {
   document.querySelectorAll('.nitem').forEach(el => el.classList.remove('active'));
   document.getElementById('nav_'+v)?.classList.add('active');
   if (v==='history') loadHistory();
+  if (v==='dashboard') renderDashboard();
 }
 
 function openSettings() { document.getElementById('settingsModal').classList.add('open'); }
@@ -827,6 +859,107 @@ function playAlert() {
       o.start(t); o.stop(t+0.35);
     });
   } catch {}
+}
+
+// ════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════
+function renderDashboard() {
+  const fx = state.fx;
+  const cats = [
+    { key:'br',     label:'🇧🇷 Ações BR',      assets: ASSETS.filter(a=>a.type==='br'||a.type==='fii') },
+    { key:'intl',   label:'🌍 Internacional',   assets: ASSETS.filter(a=>a.type==='intl') },
+    { key:'crypto', label:'₿ Cripto',           assets: ASSETS.filter(a=>a.type==='crypto') },
+  ];
+
+  let totalInvest = 0, totalAtual = 0;
+
+  // Calcular totais
+  cats.forEach(cat => {
+    cat.assets.forEach(a => {
+      const price = state.prices[a.id];
+      const isBRL = a.type==='br' || a.type==='fii';
+      const investBRL = a.compra * a.qtd * (isBRL ? 1 : fx);
+      const atualBRL = price != null ? price * a.qtd * (isBRL ? 1 : fx) : investBRL;
+      totalInvest += investBRL;
+      totalAtual += atualBRL;
+    });
+  });
+
+  const totalLP = totalAtual - totalInvest;
+  const totalPct = totalInvest > 0 ? (totalLP / totalInvest) * 100 : 0;
+  const lpCls = totalLP >= 0 ? 'pos' : 'neg';
+  const lpSign = totalLP >= 0 ? '+' : '';
+
+  let html = `
+  <div class="dash-summary">
+    <div class="dash-card">
+      <div class="dash-label">Total Investido</div>
+      <div class="dash-value">R$ ${totalInvest.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Valor Atual</div>
+      <div class="dash-value">R$ ${totalAtual.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    </div>
+    <div class="dash-card full">
+      <div class="dash-label">Lucro / Prejuízo Total</div>
+      <div class="dash-value ${lpCls}">${lpSign}R$ ${Math.abs(totalLP).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="dash-sub" style="color:${totalLP>=0?'var(--green)':'var(--red)'}">${lpSign}${totalPct.toFixed(2)}% sobre o investido</div>
+    </div>
+  </div>`;
+
+  cats.forEach(cat => {
+    let catInvest = 0, catAtual = 0;
+    const rows = cat.assets.map(a => {
+      const price = state.prices[a.id];
+      const isBRL = a.type==='br' || a.type==='fii';
+      const isCrypto = a.type==='crypto';
+      const isIntl = a.type==='intl';
+      const investBRL = a.compra * a.qtd * (isBRL ? 1 : fx);
+      const atualBRL = price != null ? price * a.qtd * (isBRL ? 1 : fx) : null;
+      catInvest += investBRL;
+      if (atualBRL != null) catAtual += atualBRL;
+      else catAtual += investBRL;
+
+      const lp = atualBRL != null ? atualBRL - investBRL : null;
+      const lpPct = lp != null && investBRL > 0 ? (lp / investBRL) * 100 : null;
+      const lpCls = lp == null ? 'neu' : lp >= 0 ? 'pos' : 'neg';
+      const lpSign = lp != null && lp >= 0 ? '+' : '';
+
+      const pmStr = isBRL ? `PM R$ ${a.compra.toFixed(2)}` : `PM US$ ${a.compra.toFixed(2)}`;
+      const atualStr = price == null ? '—' : isBRL ? `R$ ${(price*a.qtd).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}` : `R$ ${(atualBRL).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const lpStr = lp == null ? '—' : `${lpSign}R$ ${Math.abs(lp).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} (${lpSign}${lpPct.toFixed(1)}%)`;
+
+      return `<div class="asset-row">
+        <div class="ar-left">
+          <div class="ar-tag">${a.id}</div>
+          <div>
+            <div class="ar-info">${pmStr} · ${a.qtd} un</div>
+            <div class="ar-qtd">Invest: R$ ${investBRL.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          </div>
+        </div>
+        <div class="ar-right">
+          <div class="ar-atual">${atualStr}</div>
+          <div class="ar-lp ${lpCls}">${lpStr}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const catLP = catAtual - catInvest;
+    const catPct = catInvest > 0 ? (catLP / catInvest) * 100 : 0;
+    const catSign = catLP >= 0 ? '+' : '';
+    const catColor = catLP >= 0 ? 'var(--green)' : 'var(--red)';
+
+    html += `<div class="cat-block">
+      <div class="cat-head">
+        <div class="cat-title">${cat.label}</div>
+        <div class="cat-pct" style="color:${catColor}">${catSign}${catPct.toFixed(1)}%</div>
+      </div>
+      ${rows}
+    </div>`;
+  });
+
+  document.getElementById('dashContent').innerHTML = html;
 }
 
 // ════════════════════════════════════════════
