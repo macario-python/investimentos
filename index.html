@@ -42,7 +42,7 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
 .app{max-width:480px;margin:0 auto;padding:16px 14px 110px;min-height:100vh}
 
 /* ── HEADER ── */
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;background:var(--bg);padding-top:8px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
 .logo{display:flex;align-items:center;gap:10px}
 .live-badge{display:flex;align-items:center;gap:6px;background:var(--s1);border:1px solid var(--border);border-radius:20px;padding:5px 10px}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite}
@@ -982,7 +982,10 @@ startLoop();
 
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
+  });
+  navigator.serviceWorker.register('sw.js?v=3').catch(()=>{});
 }
 </script>
 </body>
