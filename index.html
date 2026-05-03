@@ -431,7 +431,15 @@ async function saveThreshold(ticker, value) {
 async function fetchPrices() {
   setDot('scanning');
   try {
-    // Tenta via API do Vercel (salva no Supabase automaticamente)
+    // 1. Primeiro faz GET para mostrar dados do cache imediatamente
+    const resGet = await fetch(`${API_BASE}/api/prices`);
+    if (resGet.ok) {
+      const dataGet = await resGet.json();
+      Object.assign(state.prices, dataGet.prices || {});
+      if (dataGet.fx) { state.fx = dataGet.fx; document.getElementById('fxIn').value = state.fx; }
+      renderCards();
+    }
+    // 2. Depois faz POST para buscar preços frescos
     const res = await fetch(`${API_BASE}/api/prices`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -443,7 +451,7 @@ async function fetchPrices() {
       if (data.fx) { state.fx = data.fx; document.getElementById('fxIn').value = state.fx; }
       state.dbOk = true;
     } else {
-      await fetchPricesDirect(); // fallback: Claude API diretamente
+      await fetchPricesDirect();
     }
   } catch {
     await fetchPricesDirect();
