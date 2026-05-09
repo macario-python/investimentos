@@ -435,6 +435,14 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
       </div>
     </div>
     <div id="connStatus" class="conn-status ok" style="margin-top:14px">✅ Supabase conectado</div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="slabel" style="margin-bottom:8px;color:var(--red)">⚠️ Zona de perigo</div>
+      <button onclick="resetLocalData()" style="width:100%;background:rgba(255,92,92,0.1);border:1px solid rgba(255,92,92,0.4);color:var(--red);border-radius:8px;padding:10px;font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;transition:all 0.15s"
+        onmouseover="this.style.background='rgba(255,92,92,0.2)'" onmouseout="this.style.background='rgba(255,92,92,0.1)'">
+        🗑️ Resetar dados locais (limpar localStorage)
+      </button>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center">Reseta quantidades e compras salvas no browser. Use se os dados estiverem errados.</div>
+    </div>
   </div>
 </div>
 
@@ -1189,9 +1197,10 @@ function renderDashboard() {
   const donutColors = ['#4d9eff','#22d3a0','#f5c842','#ff5c5c','#a78bfa','#ff9933','#00d4ff','#ff6b9d','#7fff7f'];
   ASSETS.forEach((a, i) => {
     if (!a.qtd) return;
-    const price  = state.prices[a.id];
+    // usa preço ao vivo se disponível, senão usa PM como fallback
+    const price  = state.prices[a.id] ?? a.compra;
     const isBRL  = a.type==='br'||a.type==='fii';
-    const val    = price != null ? price * a.qtd * (isBRL ? 1 : fx) : a.compra * a.qtd * (isBRL ? 1 : fx);
+    const val    = price * a.qtd * (isBRL ? 1 : fx);
     donutLabels.push(a.id);
     donutData.push(parseFloat(val.toFixed(2)));
   });
@@ -1584,8 +1593,30 @@ function playAlert() {
 }
 
 // ════════════════════════════════════════════
+//  RESET LOCAL
+// ════════════════════════════════════════════
+function resetLocalData() {
+  if (!confirm('Tem certeza? Isso vai apagar as compras e quantidades salvas no browser.')) return;
+  localStorage.removeItem('ai_compras');
+  localStorage.removeItem('ai_assets');
+  localStorage.removeItem('ai_history');
+  state.compras = {};
+  state.patrimHistory = [];
+  // restaura qtd e PM originais
+  ASSETS.forEach(a => {
+    a.compra = a._compra_orig ?? a.compra;
+    a.qtd    = a._qtd_orig    ?? a.qtd;
+  });
+  closeAllModals();
+  renderCards(); renderDashboard(); renderAlertasView(); renderDividendosView();
+  showToast('🗑️ Dados locais resetados!', 'ok');
+}
+
+// ════════════════════════════════════════════
 //  BOOT
 // ════════════════════════════════════════════
+// salva valores originais antes do loadLocal sobrescrever
+ASSETS.forEach(a => { a._compra_orig = a.compra; a._qtd_orig = a.qtd; });
 loadLocal();
 initSupabase();
 if (Notification.permission==='granted') {
