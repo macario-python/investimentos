@@ -1617,6 +1617,20 @@ function resetLocalData() {
 // ════════════════════════════════════════════
 // salva valores originais antes do loadLocal sobrescrever
 ASSETS.forEach(a => { a._compra_orig = a.compra; a._qtd_orig = a.qtd; });
+
+// limpa localStorage se versão antiga detectada (VALE3 com qtd errada)
+try {
+  const savedAssets = JSON.parse(localStorage.getItem('ai_assets') || '[]');
+  const vale = savedAssets.find(a => a.id === 'VALE3');
+  const hasBadAssets = savedAssets.some(a => ['BMOB3','DIRR3','SIMH3','CURY3','TSM','BABA','TCEHY','PDD','SONY'].includes(a.id));
+  if (hasBadAssets || (vale && vale.qtd < 20)) {
+    localStorage.removeItem('ai_assets');
+    localStorage.removeItem('ai_compras');
+    localStorage.removeItem('ai_history');
+    console.log('Cache antigo detectado e limpo automaticamente!');
+  }
+} catch(e) {}
+
 loadLocal();
 initSupabase();
 if (Notification.permission==='granted') {
