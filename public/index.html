@@ -750,9 +750,30 @@ async function fetchPrices() {
   setDot('on');
   updateLastScan();
   snapshotPatrimony();
+  // indica se mercado está aberto ou fechado
+  const now = new Date();
+  const brt = new Date(now.toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+  const h = brt.getHours(), m = brt.getMinutes(), dow = brt.getDay();
+  const mktOpen = dow >= 1 && dow <= 5 && (h > 10 || (h === 10 && m >= 0)) && h < 17;
+  const chip = document.getElementById('chipTimer');
+  if (!mktOpen) {
+    chip.style.borderColor = 'rgba(255,92,92,0.4)';
+    chip.style.color = 'var(--red)';
+    chip.title = 'Mercado fechado — mostrando preço de fechamento';
+  } else {
+    chip.style.borderColor = '';
+    chip.style.color = '';
+  }
 }
 
 async function fetchPricesDirect() {
+  // carrega preços salvos do localStorage primeiro (último valor conhecido)
+  try {
+    const saved = JSON.parse(localStorage.getItem('ai_prices') || '{}');
+    Object.assign(state.prices, saved);
+    renderCards(); renderDashboard();
+  } catch(e) {}
+
   // Brapi para BR
   try {
     const tickers = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
@@ -760,8 +781,10 @@ async function fetchPricesDirect() {
     if (r.ok) {
       const d = await r.json();
       (d.results||[]).forEach(s => { if (s.regularMarketPrice) state.prices[s.symbol] = s.regularMarketPrice; });
+      // salva no localStorage para uso offline/mercado fechado
+      localStorage.setItem('ai_prices', JSON.stringify(state.prices));
     }
-  } catch(e){}
+  } catch(e) {}
   // CoinGecko para crypto
   try {
     const ids = 'render-token,tether';
@@ -1617,20 +1640,6 @@ function resetLocalData() {
 // ════════════════════════════════════════════
 // salva valores originais antes do loadLocal sobrescrever
 ASSETS.forEach(a => { a._compra_orig = a.compra; a._qtd_orig = a.qtd; });
-
-// limpa localStorage se versão antiga detectada (VALE3 com qtd errada)
-try {
-  const savedAssets = JSON.parse(localStorage.getItem('ai_assets') || '[]');
-  const vale = savedAssets.find(a => a.id === 'VALE3');
-  const hasBadAssets = savedAssets.some(a => ['BMOB3','DIRR3','SIMH3','CURY3','TSM','BABA','TCEHY','PDD','SONY'].includes(a.id));
-  if (hasBadAssets || (vale && vale.qtd < 20)) {
-    localStorage.removeItem('ai_assets');
-    localStorage.removeItem('ai_compras');
-    localStorage.removeItem('ai_history');
-    console.log('Cache antigo detectado e limpo automaticamente!');
-  }
-} catch(e) {}
-
 loadLocal();
 initSupabase();
 if (Notification.permission==='granted') {
