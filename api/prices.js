@@ -30,125 +30,102 @@ const ASSETS = [
 ];
 
 // ── B3 via Brapi ──────────────────────────────────────────────────────────────
+// ── B3 via Brapi — 1 ticker por vez (limite do plano gratuito) ────────────────
 async function fetchBR() {
-  const tickers = ASSETS.filter(a => a.type === 'br' || a.type === 'fii').map(a => a.id).join(',');
-
-  // Tenta com token se existir, senão sem token
+  const tickers = ASSETS.filter(a => a.type === 'br' || a.type === 'fii').map(a => a.id);
   const token = process.env.BRAPI_TOKEN;
-  const url = token
-    ? `https://brapi.dev/api/quote/${tickers}?token=${token}`
-    : `https://brapi.dev/api/quote/${tickers}`;
-
-  const res = await fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-      'User-Agent': 'AlertaInvest/1.0'
-    },
-    signal: AbortSignal.timeout(8000)
-  });
-
-  if (!res.ok) {
-    console.error(`[Brapi] HTTP ${res.status}: ${await res.text()}`);
-    return {};
-  }
-
-  const data = await res.json();
-
-  if (data.error) {
-    console.error('[Brapi] Erro:', data.message || data.error);
-    return {};
-  }
-
   const prices = {};
-  (data.results || []).forEach(item => {
-    if (item.regularMarketPrice != null) {
-      prices[item.symbol] = item.regularMarketPrice;
+
+  // Plano gratuito Brapi: máximo 1 ticker por request — busca em paralelo
+  await Promise.all(tickers.map(async ticker => {
+    try {
+      const url = `https://brapi.dev/api/quote/${ticker}${token ? `?token=${token}` : ''}`;
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000)
+      });
+      const data = await res.json();
+      if (data.error) {
+        console.error(`[Brapi] ${ticker} erro: ${data.message}`);
+        return;
+      }
+      const item = (data.results || [])[0];
+      if (item?.regularMarketPrice != null) {
+        prices[item.symbol] = item.regularMarketPrice;
+      }
+    } catch (e) {
+      console.error(`[Brapi] ${ticker} exception: ${e.message}`);
     }
-  });
+  }));
 
   console.log(`[Brapi] OK — ${Object.keys(prices).length} ativos:`, Object.keys(prices).join(', '));
   return prices;
 }
 
-// ── Internacional via Yahoo Finance v8 ───────────────────────────────────────
+// ── Internacional via Financial Modeling Prep (gratuito, sem bloqueio) ────────
 async function fetchIntl() {
-  const tickers = ['O', 'TSM', 'BABA', 'TCEHY', 'PDD', 'SONY'].join(',');
-
-  // v8 é mais estável que v7 para requests server-side
-  const url = `https://query2.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(tickers)}&range=1d&interval=1d`;
-
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'application/json',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Referer': 'https://finance.yahoo.com/',
-      'Origin': 'https://finance.yahoo.com'
-    },
-    signal: AbortSignal.timeout(8000)
-  });
-
-  if (!res.ok) {
-    console.error(`[Yahoo v8] HTTP ${res.status} — tentando fallback v7...`);
-    return fetchIntlFallback();
-  }
-
-  const data = await res.json();
+  const tickers = ['O', 'TSM', 'BABA', 'TCEHY', 'PDD', 'SONY'];
+  const apiKey = process.env.FMP_TOKEN || 'demo';
   const prices = {};
 
-  // v8 spark retorna: { spark: { result: [{ symbol, response: [{ meta: { regularMarketPrice } }] }] } }
-  (data?.spark?.result || []).forEach(item => {
-    const price = item?.response?.[0]?.meta?.regularMarketPrice;
-    if (item.symbol && price != null) {
-      prices[item.symbol] = price;
-    }
-  });
-
-  if (Object.keys(prices).length === 0) {
-    console.warn('[Yahoo v8] Sem resultados — tentando fallback v7...');
-    return fetchIntlFallback();
-  }
-
-  console.log(`[Yahoo v8] OK — ${Object.keys(prices).length} ativos:`, Object.keys(prices).join(', '));
-  return prices;
-}
-
-// Fallback: Yahoo Finance v7 quote (às vezes funciona dependendo do datacenter Vercel)
-async function fetchIntlFallback() {
-  const tickers = ['O', 'TSM', 'BABA', 'TCEHY', 'PDD', 'SONY'].join(',');
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers)}&fields=regularMarketPrice,symbol`;
-
+  // FMP gratuito: até 5 symbols por request
   try {
+    const symbols = tickers.join(',');
+    const url = `https://financialmodelingprep.com/api/v3/quote-short/${symbols}?apikey=${apiKey}`;
     const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://finance.yahoo.com/',
-        'Cookie': ''  // sem cookie evita redirect de consent
-      },
+      headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(8000)
     });
 
     if (!res.ok) {
-      console.error(`[Yahoo v7 fallback] HTTP ${res.status}`);
-      return {};
+      console.error(`[FMP] HTTP ${res.status}`);
+      return fetchIntlFallback();
     }
 
     const data = await res.json();
-    const prices = {};
-    (data?.quoteResponse?.result || []).forEach(q => {
-      if (q.symbol && q.regularMarketPrice != null) {
-        prices[q.symbol] = q.regularMarketPrice;
-      }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn('[FMP] Sem resultados — tentando fallback...');
+      return fetchIntlFallback();
+    }
+
+    data.forEach(q => {
+      if (q.symbol && q.price != null) prices[q.symbol] = q.price;
     });
 
-    console.log(`[Yahoo v7 fallback] ${Object.keys(prices).length} ativos`);
+    console.log(`[FMP] OK — ${Object.keys(prices).length} ativos:`, Object.keys(prices).join(', '));
     return prices;
   } catch (e) {
-    console.error('[Yahoo v7 fallback] Erro:', e.message);
+    console.error('[FMP] Erro:', e.message);
+    return fetchIntlFallback();
+  }
+}
+
+// Fallback: CoinGecko não serve, usa Alpha Vantage (gratuito)
+async function fetchIntlFallback() {
+  const tickers = ['O', 'TSM', 'BABA', 'TCEHY', 'PDD', 'SONY'];
+  const apiKey = process.env.ALPHA_VANTAGE_TOKEN;
+  if (!apiKey) {
+    console.warn('[AlphaVantage] Sem token configurado');
     return {};
   }
+
+  const prices = {};
+  // Alpha Vantage gratuito: 25 requests/dia, busca sequencial
+  for (const ticker of tickers) {
+    try {
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${apiKey}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const data = await res.json();
+      const price = parseFloat(data?.['Global Quote']?.['05. price']);
+      if (!isNaN(price)) prices[ticker] = price;
+    } catch (e) {
+      console.error(`[AlphaVantage] ${ticker}: ${e.message}`);
+    }
+  }
+
+  console.log(`[AlphaVantage fallback] ${Object.keys(prices).length} ativos`);
+  return prices;
 }
 
 // ── Cripto via CoinGecko ──────────────────────────────────────────────────────
