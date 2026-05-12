@@ -752,76 +752,100 @@ async function fetchPrices() {
   snapshotPatrimony();
 }
 
-async function fetchPricesDirect() {
-  // Busca preços BR via Yahoo Finance (sem CORS via allorigins)
+async function fetchWithTimeout(url, ms=5000) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
   try {
-    const brAssets = ASSETS.filter(a=>a.type==='br'||a.type==='fii');
-    let gotPrices = false;
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(id);
+    return r;
+  } catch(e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
 
-    // tenta cada ativo individualmente via Yahoo Finance
-    const fetchYahoo = async (ticker) => {
-      const ySym = ticker + '.SA';
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?interval=1d&range=1d`;
-      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const r = await fetch(proxy);
-      if (!r.ok) return null;
+async function fetchPricesDirect() {
+  const brAssets = ASSETS.filter(a=>a.type==='br'||a.type==='fii');
+
+  // 1. Brapi direto (sem proxy, funciona melhor no Safari/iOS)
+  try {
+    const tickers = brAssets.map(a=>a.id).join(',');
+    const r = await fetchWithTimeout(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`, 7000);
+    if (r.ok) {
       const d = await r.json();
-      const parsed = JSON.parse(d.contents);
-      return parsed?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
-    };
+      (d.results||[]).forEach(s => { if (s.regularMarketPrice) state.prices[s.symbol] = s.regularMarketPrice; });
+      renderCards(); renderDashboard();
+    }
+  } catch(e) { console.log('Brapi falhou:', e.message); }
 
-    // busca em paralelo
-    const results = await Promise.allSettled(brAssets.map(a => fetchYahoo(a.id)));
-    results.forEach((res, i) => {
-      if (res.status === 'fulfilled' && res.value) {
-        state.prices[brAssets[i].id] = res.value;
-        gotPrices = true;
-      }
-    });
-
-    // fallback: Brapi
-    if (!gotPrices) {
+  // 2. Fallback allorigins só para ativos sem preço, com timeout curto
+  const missing = brAssets.filter(a => !state.prices[a.id]);
+  if (missing.length > 0) {
+    const fetchYahoo = async (ticker) => {
       try {
-        const tickers = brAssets.map(a=>a.id).join(',');
-        const r = await fetch(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`);
+        const ySym = ticker + '.SA';
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?interval=1d&range=1d`;
+        const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const r = await fetchWithTimeout(proxy, 5000);
+        if (!r.ok) return null;
+        const d = await r.json();
+        const parsed = JSON.parse(d.contents);
+        return parsed?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+      } catch(e) { return null; }
+    };
+    const results = await Promise.allSettled(missing.map(a => fetchYahoo(a.id)));
+    results.forEach((res, i) => {
+      if (res.status === 'fulfilled' && res.value) state.prices[missing[i].id] = res.value;
+    });
+  }
+
+  // 3. Internacional via Alpha Vantage com timeout
+  try {
+    const ALPHA_KEY = '7OJ2IEDGX9J0S1O1';
+    const intlAssets = ASSETS.filter(a=>a.type==='intl');
+    for (const asset of intlAssets) {
+      try {
+        const r = await fetchWithTimeout(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${asset.id}&apikey=${ALPHA_KEY}`, 6000);
         if (r.ok) {
           const d = await r.json();
-          (d.results||[]).forEach(s => { if (s.regularMarketPrice) state.prices[s.symbol] = s.regularMarketPrice; });
+          const price = parseFloat(d['Global Quote']?.['05. price']);
+          if (price) state.prices[asset.id] = price;
         }
-      } catch(e1) {}
+      } catch(e) {}
+      await new Promise(res => setTimeout(res, 1200));
     }
+  } catch(e) { console.log('Erro fetch INTL:', e); }
 
-    // salva preços no localStorage E no Supabase
-    if (Object.keys(state.prices).length > 0) {
-      localStorage.setItem('ai_prices', JSON.stringify(state.prices));
-      savePricesToSupabase();
-    }
-  } catch(e) { console.log('Erro fetch BR:', e); }
-  // CoinGecko para crypto
+  // 4. CoinGecko para crypto com timeout
   try {
-    const ids = 'render-token,tether';
-    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`);
+    const r = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=render-token,tether&vs_currencies=usd', 6000);
     if (r.ok) {
       const d = await r.json();
       if (d['render-token']?.usd) state.prices['RNDR'] = d['render-token'].usd;
       if (d['tether']?.usd) state.prices['USDT'] = d['tether'].usd;
     }
-  } catch(e){}
-  // AwesomeAPI para dólar
+  } catch(e) { console.log('CoinGecko falhou:', e.message); }
+
+  // 5. AwesomeAPI para dólar com timeout
   try {
-    const r = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL');
+    const r = await fetchWithTimeout('https://economia.awesomeapi.com.br/json/last/USD-BRL', 5000);
     if (r.ok) {
       const d = await r.json();
       const fx = parseFloat(d.USDBRL?.bid);
       const fxHigh = parseFloat(d.USDBRL?.high);
       const fxLow  = parseFloat(d.USDBRL?.low);
       const fxPctChange = parseFloat(d.USDBRL?.pctChange);
-      if (fx) {
-        updateFX(fx, null, fxHigh, fxLow, fxPctChange);
-        document.getElementById('fxIn') && (document.getElementById('fxIn').value = fx);
-      }
+      if (fx) updateFX(fx, null, fxHigh, fxLow, fxPctChange);
     }
-  } catch(e){}
+  } catch(e) { console.log('AwesomeAPI falhou:', e.message); }
+
+  // salva tudo
+  if (Object.keys(state.prices).length > 0) {
+    localStorage.setItem('ai_prices', JSON.stringify(state.prices));
+    savePricesToSupabase();
+  }
+  renderCards(); renderDashboard();
 }
 
 function updateFX(fx, fxPrev, fxHigh, fxLow, fxPct) {
@@ -1678,33 +1702,42 @@ function resetLocalData() {
 // ════════════════════════════════════════════
 //  BOOT
 // ════════════════════════════════════════════
-// salva valores originais antes do loadLocal sobrescrever
-ASSETS.forEach(a => { a._compra_orig = a.compra; a._qtd_orig = a.qtd; });
-loadLocal();
-initSupabase();
-if (Notification.permission==='granted') {
-  state.notifOn=true;
-  document.getElementById('togNotif').checked=true;
-  document.getElementById('notifBtn').classList.add('on');
-  updateNotifChip();
-}
-renderCards();
-// carrega preços do Supabase primeiro (sincroniza entre dispositivos)
-loadPricesFromSupabase().then(() => {
-  fetchPricesDirect(); // busca preços ao vivo
+document.addEventListener('DOMContentLoaded', () => {
+  // salva valores originais antes do loadLocal sobrescrever
+  ASSETS.forEach(a => { a._compra_orig = a.compra; a._qtd_orig = a.qtd; });
+  ASSETS.forEach(a => { state.prices[a.id] = state.prices[a.id] ?? null; });
+  loadLocal();
+  initSupabase();
+  if (Notification.permission==='granted') {
+    state.notifOn=true;
+    document.getElementById('togNotif').checked=true;
+    document.getElementById('notifBtn').classList.add('on');
+    updateNotifChip();
+  }
+  renderCards();
+  startLoop();
+  // aguarda Supabase inicializar, depois busca preços
+  setTimeout(async () => {
+    await loadPricesFromSupabase();
+    renderCards();
+    fetchPricesDirect();
+  }, 1500);
+  setTimeout(fetchPrices, 2000);
 });
-startLoop();
-setTimeout(fetchPrices, 500); // tenta API Vercel também
 </script>
 
 <script>
-// força remoção de todos os service workers e cache antigo
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
-  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-}
+// mata TODOS os service workers e caches
+(async () => {
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+})();
 </script>
 </body>
 </html>
