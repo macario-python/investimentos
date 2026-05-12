@@ -750,41 +750,38 @@ async function fetchPrices() {
   setDot('on');
   updateLastScan();
   snapshotPatrimony();
-  // indica se mercado está aberto ou fechado
-  const now = new Date();
-  const brt = new Date(now.toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
-  const h = brt.getHours(), m = brt.getMinutes(), dow = brt.getDay();
-  const mktOpen = dow >= 1 && dow <= 5 && (h > 10 || (h === 10 && m >= 0)) && h < 17;
-  const chip = document.getElementById('chipTimer');
-  if (!mktOpen) {
-    chip.style.borderColor = 'rgba(255,92,92,0.4)';
-    chip.style.color = 'var(--red)';
-    chip.title = 'Mercado fechado — mostrando preço de fechamento';
-  } else {
-    chip.style.borderColor = '';
-    chip.style.color = '';
-  }
 }
 
 async function fetchPricesDirect() {
-  // carrega preços salvos do localStorage primeiro (último valor conhecido)
-  try {
-    const saved = JSON.parse(localStorage.getItem('ai_prices') || '{}');
-    Object.assign(state.prices, saved);
-    renderCards(); renderDashboard();
-  } catch(e) {}
-
-  // Brapi para BR
+  // Brapi para BR + fallback HGBrasil
   try {
     const tickers = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
-    const r = await fetch(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`);
-    if (r.ok) {
-      const d = await r.json();
-      (d.results||[]).forEach(s => { if (s.regularMarketPrice) state.prices[s.symbol] = s.regularMarketPrice; });
-      // salva no localStorage para uso offline/mercado fechado
-      localStorage.setItem('ai_prices', JSON.stringify(state.prices));
+    let gotPrices = false;
+    // tenta Brapi primeiro
+    try {
+      const r = await fetch(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`);
+      if (r.ok) {
+        const d = await r.json();
+        (d.results||[]).forEach(s => { if (s.regularMarketPrice) { state.prices[s.symbol] = s.regularMarketPrice; gotPrices = true; } });
+      }
+    } catch(e1) {}
+    // fallback: HGBrasil (sem CORS)
+    if (!gotPrices) {
+      try {
+        const tList = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
+        const r2 = await fetch(`https://api.hgbrasil.com/finance/stock_price?key=demo&symbol=${tList}`);
+        if (r2.ok) {
+          const d2 = await r2.json();
+          Object.entries(d2.results||{}).forEach(([sym,data]) => { if (data.price) state.prices[sym] = data.price; });
+        }
+      } catch(e2) {}
     }
-  } catch(e) {}
+    // salva preços no localStorage E no Supabase
+    if (Object.keys(state.prices).length > 0) {
+      localStorage.setItem('ai_prices', JSON.stringify(state.prices));
+      savePricesToSupabase();
+    }
+  } catch(e){}
   // CoinGecko para crypto
   try {
     const ids = 'render-token,tether';
@@ -1616,6 +1613,34 @@ function playAlert() {
 }
 
 // ════════════════════════════════════════════
+//  SUPABASE PRICE CACHE
+// ════════════════════════════════════════════
+async function savePricesToSupabase() {
+  if (!state.sb) return;
+  try {
+    const rows = Object.entries(state.prices).map(([ticker, price]) => ({
+      ticker, price, updated_at: new Date().toISOString()
+    }));
+    await state.sb.from('prices_cache').upsert(rows, { onConflict: 'ticker' });
+  } catch(e) { console.log('Erro ao salvar preços no Supabase:', e); }
+}
+
+async function loadPricesFromSupabase() {
+  if (!state.sb) return false;
+  try {
+    const { data } = await state.sb.from('prices_cache').select('ticker, price, updated_at');
+    if (data && data.length > 0) {
+      data.forEach(row => { state.prices[row.ticker] = parseFloat(row.price); });
+      localStorage.setItem('ai_prices', JSON.stringify(state.prices));
+      renderCards(); renderDashboard();
+      showToast('📊 Preços carregados do Supabase', 'ok');
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+// ════════════════════════════════════════════
 //  RESET LOCAL
 // ════════════════════════════════════════════
 function resetLocalData() {
@@ -1649,15 +1674,21 @@ if (Notification.permission==='granted') {
   updateNotifChip();
 }
 renderCards();
-fetchPricesDirect(); // começa direto no browser
+// carrega preços do Supabase primeiro (sincroniza entre dispositivos)
+loadPricesFromSupabase().then(() => {
+  fetchPricesDirect(); // busca preços ao vivo
+});
 startLoop();
 setTimeout(fetchPrices, 500); // tenta API Vercel também
 </script>
 
 <script>
+// força remoção de todos os service workers e cache antigo
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r=>r.unregister()); });
-  navigator.serviceWorker.register('sw.js?v=4').catch(()=>{});
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
+  });
+  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
 }
 </script>
 </body>
