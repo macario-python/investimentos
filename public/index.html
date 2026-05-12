@@ -797,6 +797,26 @@ async function fetchPricesDirect() {
       savePricesToSupabase();
     }
   } catch(e) { console.log('Erro fetch BR:', e); }
+
+  // Ações internacionais via Alpha Vantage
+  try {
+    const ALPHA_KEY = '7OJ2IEDGX9J0S1O1';
+    const intlAssets = ASSETS.filter(a=>a.type==='intl');
+    for (const asset of intlAssets) {
+      try {
+        const r = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${asset.id}&apikey=${ALPHA_KEY}`);
+        if (r.ok) {
+          const d = await r.json();
+          const price = parseFloat(d['Global Quote']?.['05. price']);
+          if (price) state.prices[asset.id] = price;
+        }
+      } catch(e) {}
+      await new Promise(res => setTimeout(res, 1200)); // respeita limite 5 req/min
+    }
+    localStorage.setItem('ai_prices', JSON.stringify(state.prices));
+    savePricesToSupabase();
+  } catch(e) { console.log('Erro fetch INTL:', e); }
+
   // CoinGecko para crypto
   try {
     const ids = 'render-token,tether';
@@ -1708,4 +1728,4 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
-<!-- bust -->
+<!-- v10 -->
