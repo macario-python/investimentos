@@ -753,35 +753,50 @@ async function fetchPrices() {
 }
 
 async function fetchPricesDirect() {
-  // Brapi para BR + fallback HGBrasil
+  // Busca preços BR via Yahoo Finance (sem CORS via allorigins)
   try {
-    const tickers = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
+    const brAssets = ASSETS.filter(a=>a.type==='br'||a.type==='fii');
     let gotPrices = false;
-    // tenta Brapi primeiro
-    try {
-      const r = await fetch(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`);
-      if (r.ok) {
-        const d = await r.json();
-        (d.results||[]).forEach(s => { if (s.regularMarketPrice) { state.prices[s.symbol] = s.regularMarketPrice; gotPrices = true; } });
+
+    // tenta cada ativo individualmente via Yahoo Finance
+    const fetchYahoo = async (ticker) => {
+      const ySym = ticker + '.SA';
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ySym}?interval=1d&range=1d`;
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      const r = await fetch(proxy);
+      if (!r.ok) return null;
+      const d = await r.json();
+      const parsed = JSON.parse(d.contents);
+      return parsed?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    };
+
+    // busca em paralelo
+    const results = await Promise.allSettled(brAssets.map(a => fetchYahoo(a.id)));
+    results.forEach((res, i) => {
+      if (res.status === 'fulfilled' && res.value) {
+        state.prices[brAssets[i].id] = res.value;
+        gotPrices = true;
       }
-    } catch(e1) {}
-    // fallback: HGBrasil (sem CORS)
+    });
+
+    // fallback: Brapi
     if (!gotPrices) {
       try {
-        const tList = ASSETS.filter(a=>a.type==='br'||a.type==='fii').map(a=>a.id).join(',');
-        const r2 = await fetch(`https://api.hgbrasil.com/finance/stock_price?key=demo&symbol=${tList}`);
-        if (r2.ok) {
-          const d2 = await r2.json();
-          Object.entries(d2.results||{}).forEach(([sym,data]) => { if (data.price) state.prices[sym] = data.price; });
+        const tickers = brAssets.map(a=>a.id).join(',');
+        const r = await fetch(`https://brapi.dev/api/quote/${tickers}?token=7omrCnr9N44VcqF3AycYq8`);
+        if (r.ok) {
+          const d = await r.json();
+          (d.results||[]).forEach(s => { if (s.regularMarketPrice) state.prices[s.symbol] = s.regularMarketPrice; });
         }
-      } catch(e2) {}
+      } catch(e1) {}
     }
+
     // salva preços no localStorage E no Supabase
     if (Object.keys(state.prices).length > 0) {
       localStorage.setItem('ai_prices', JSON.stringify(state.prices));
       savePricesToSupabase();
     }
-  } catch(e){}
+  } catch(e) { console.log('Erro fetch BR:', e); }
   // CoinGecko para crypto
   try {
     const ids = 'render-token,tether';
