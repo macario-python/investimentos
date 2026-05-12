@@ -1718,14 +1718,18 @@ setTimeout(fetchPrices, 500); // tenta API Vercel também
 </script>
 
 <script>
-// força remoção de todos os service workers e cache antigo
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
-  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-}
+// mata TODOS os service workers e caches
+(async () => {
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r => r.unregister()));
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+})();
 </script>
 </body>
 </html>
-<!-- v10 -->
+<!-- cache-kill-iphone -->
