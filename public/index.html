@@ -757,7 +757,7 @@ async function fetchPricesDirect() {
 
   // 1. Brapi direto — em lotes de 5 para evitar erro 400
   try {
-    const batchSize = 5;
+    const batchSize = 1;
     for (let i = 0; i < brAssets.length; i += batchSize) {
       const batch = brAssets.slice(i, i + batchSize);
       const tickers = batch.map(a => a.id).join(',');
