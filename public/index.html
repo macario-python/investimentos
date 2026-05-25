@@ -371,7 +371,15 @@ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0
 
   <!-- HISTÓRICO -->
   <div class="view" id="viewHistory">
-    <div class="sec">📋 Histórico de Alertas</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button id="htab_fechamentos" onclick="switchHistTab('fechamentos')" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#000;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;cursor:pointer">📅 Fechamentos</button>
+      <button id="htab_alertas" onclick="switchHistTab('alertas')" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--s1);color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;cursor:pointer">⚡ Alertas</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button onclick="manualSnapshot()" style="flex:1;padding:9px;border-radius:8px;border:1px dashed rgba(34,211,160,0.4);background:rgba(34,211,160,0.06);color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all 0.15s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='rgba(34,211,160,0.4)'">
+        📅 Salvar fechamento agora
+      </button>
+    </div>
     <div id="histList"><div style="text-align:center;padding:40px;color:var(--muted);font-size:12px">Carregando...</div></div>
   </div>
 
@@ -737,6 +745,7 @@ async function fetchPrices() {
   setDot('on');
   updateLastScan();
   snapshotPatrimony();
+  checkMarketClose();
 }
 
 async function fetchWithTimeout(url, ms=5000) {
@@ -1557,12 +1566,72 @@ function fireNotif(ticker, changePct, thrPct, price, dir) {
 // ════════════════════════════════════════════
 //  HISTORY
 // ════════════════════════════════════════════
-async function loadHistory() {
+// tab ativo no histórico
+state.histTab = 'fechamentos';
+
+function switchHistTab(tab) {
+  state.histTab = tab;
+  const btnF = document.getElementById('htab_fechamentos');
+  const btnA = document.getElementById('htab_alertas');
+  if (tab === 'fechamentos') {
+    btnF.style.background = 'var(--accent)'; btnF.style.borderColor = 'var(--accent)'; btnF.style.color = '#000';
+    btnA.style.background = 'var(--s1)';     btnA.style.borderColor = 'var(--border)';  btnA.style.color = 'var(--text)';
+    loadFechamentos();
+  } else {
+    btnA.style.background = 'var(--accent)'; btnA.style.borderColor = 'var(--accent)'; btnA.style.color = '#000';
+    btnF.style.background = 'var(--s1)';     btnF.style.borderColor = 'var(--border)';  btnF.style.color = 'var(--text)';
+    loadAlertas();
+  }
+}
+
+async function loadHistory() { switchHistTab(state.histTab || 'fechamentos'); }
+
+async function loadFechamentos() {
   const list = document.getElementById('histList');
-  if (!state.sb) {
-    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">Conecte o Supabase para ver o histórico</div>';
+  if (!state.sb) { list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">Supabase não conectado</div>'; return; }
+  list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Carregando...</div>';
+  const { data, error } = await state.sb.from('price_history').select('*').order('captured_at',{ascending:false}).limit(200);
+  if (error || !data?.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">Nenhum fechamento registrado ainda.<br><span style="font-size:10px;opacity:0.6">Snapshots salvos automaticamente às 17:30</span></div>';
     return;
   }
+  // agrupa por data
+  const byDate = {};
+  data.forEach(row => {
+    const d = new Date(row.captured_at);
+    const key = d.toLocaleDateString('pt-BR');
+    if (!byDate[key]) byDate[key] = { time: d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), rows: [] };
+    byDate[key].rows.push(row);
+  });
+  let html = '';
+  Object.entries(byDate).forEach(([date, group]) => {
+    html += `<div style="margin-bottom:14px">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;color:var(--accent);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">
+        📅 ${date} <span style="color:var(--muted);font-size:10px;font-weight:400">fechamento ${group.time}</span>
+      </div>`;
+    group.rows.forEach(row => {
+      const isBRL = row.asset_type === 'br' || row.asset_type === 'fii';
+      const sym = isBRL ? 'R$' : 'US$';
+      const asset = ASSETS.find(a => a.id === row.ticker);
+      const pm = asset?.compra || 0;
+      const diff = pm > 0 ? ((row.price - pm) / pm) * 100 : null;
+      const diffHtml = diff !== null
+        ? `<span style="font-size:10px;font-weight:600;color:${diff>=0?'var(--green)':'var(--red)'}">${diff>=0?'▲':'▼'} ${Math.abs(diff).toFixed(1)}%</span>`
+        : '';
+      html += `<div class="hist-item">
+        <div><div class="hist-ticker">${row.ticker}</div><div class="hist-info" style="font-size:9px">${row.asset_type?.toUpperCase()}</div></div>
+        <div style="text-align:right">${diffHtml}</div>
+        <div style="text-align:right"><div style="font-size:13px;font-weight:600">${sym} ${parseFloat(row.price).toFixed(2)}</div></div>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+async function loadAlertas() {
+  const list = document.getElementById('histList');
+  if (!state.sb) { list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">Supabase não conectado</div>'; return; }
   const { data } = await state.sb.from('alert_log').select('*').order('triggered_at',{ascending:false}).limit(50);
   if (!data?.length) { list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted);font-size:12px">Nenhum alerta ainda</div>'; return; }
   list.innerHTML = data.map(a => {
@@ -1574,6 +1643,66 @@ async function loadHistory() {
       <div style="text-align:right"><div style="font-size:12px">${a.currency==='USD'?'US$':'R$'} ${(a.price_at_alert||0).toFixed(2)}</div><div class="hist-time">${dtStr}</div></div>
     </div>`;
   }).join('');
+}
+
+// ── Snapshot de fechamento diário ──
+async function saveDailySnapshot() {
+  if (!state.sb) return;
+  const today = new Date().toISOString().split('T')[0];
+  const lastSnap = localStorage.getItem('ai_last_snap');
+  if (lastSnap === today) return; // já salvou hoje
+  const rows = ASSETS
+    .filter(a => state.prices[a.id] != null)
+    .map(a => ({
+      ticker:     a.id,
+      price:      state.prices[a.id],
+      currency:   (a.type==='br'||a.type==='fii') ? 'BRL' : 'USD',
+      asset_type: a.type,
+      captured_at: new Date().toISOString()
+    }));
+  if (!rows.length) return;
+  const { error } = await state.sb.from('price_history').insert(rows);
+  if (!error) {
+    localStorage.setItem('ai_last_snap', today);
+    showToast('📅 Fechamento salvo!', 'ok');
+    console.log('Snapshot diário salvo:', rows.length, 'ativos');
+  }
+}
+
+async function manualSnapshot() {
+  if (!state.sb) { showToast('Supabase não conectado', 'err'); return; }
+  const hasPrice = ASSETS.some(a => state.prices[a.id] != null);
+  if (!hasPrice) { showToast('Aguarde os preços carregarem', 'err'); return; }
+  const rows = ASSETS
+    .filter(a => state.prices[a.id] != null)
+    .map(a => ({
+      ticker:      a.id,
+      price:       state.prices[a.id],
+      currency:    (a.type==='br'||a.type==='fii') ? 'BRL' : 'USD',
+      asset_type:  a.type,
+      captured_at: new Date().toISOString()
+    }));
+  showToast('💾 Salvando fechamento...', '');
+  const { error } = await state.sb.from('price_history').insert(rows);
+  if (!error) {
+    localStorage.setItem('ai_last_snap', new Date().toISOString().split('T')[0]);
+    showToast(`✅ ${rows.length} ativos salvos!`, 'ok');
+    loadFechamentos();
+  } else {
+    showToast('❌ Erro ao salvar: ' + error.message, 'err');
+    console.error('Snapshot erro:', error);
+  }
+}
+
+// verifica horário de fechamento a cada ciclo
+function checkMarketClose() {
+  const now = new Date();
+  const brt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const h = brt.getHours(), m = brt.getMinutes();
+  // salva entre 17:30 e 17:35 (fechamento B3) ou 18:00-18:05 (pós-fechamento intl)
+  if ((h === 17 && m >= 30 && m < 36) || (h === 18 && m >= 0 && m < 6)) {
+    saveDailySnapshot();
+  }
 }
 
 // ════════════════════════════════════════════
